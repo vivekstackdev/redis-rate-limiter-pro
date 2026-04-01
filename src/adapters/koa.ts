@@ -9,7 +9,6 @@ export interface KoaAdapterConfig extends Omit<RateLimiterConfig, 'limiter'> {
 
 export const koaAdapter = (limiter: Limiter, config: KoaAdapterConfig = {}) => {
   return async (ctx: any, next: () => Promise<void>) => {
-    try {
       const rateLimitCtx: RateLimitContext = {
         ip: ctx.ip || ctx.request.ip,
         method: ctx.method,
@@ -37,8 +36,5 @@ export const koaAdapter = (limiter: Limiter, config: KoaAdapterConfig = {}) => {
       }
 
       await next();
-    } catch (error) {
-      throw error;
-    }
   };
 };
