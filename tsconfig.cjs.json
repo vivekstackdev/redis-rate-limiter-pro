@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist/cjs",
+    "declaration": true,
+    "declarationMap": true,
+    "stripInternal": true,
+    "removeComments": true
+  }
+}
