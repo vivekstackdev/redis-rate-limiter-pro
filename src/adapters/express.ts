@@ -1,14 +1,13 @@
 // Express adapter
 import { Request, Response, NextFunction } from 'express';
 import { Limiter } from '../core/limiter.js';
-import { handleRateLimit } from '../core/handle.js';
+import { createRateLimiter, isLimiterInstance } from '../factory/createLimiter.js';
 import type { RateLimiterConfig, RateLimitContext } from '../types/index.js';
 
-export interface ExpressRateLimiterOptions extends Omit<RateLimiterConfig, 'limiter'> {
-  redis?: any;
-}
+export const expressAdapter = (input: RateLimiterConfig | Limiter) => {
+  if (!input) throw new Error("Rate limiter config required");
+  const limiter = isLimiterInstance(input) ? input : createRateLimiter(input);
 
-export const expressAdapter = (limiter: Limiter, config: ExpressRateLimiterOptions = {}) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const ctx: RateLimitContext = {
@@ -23,11 +22,11 @@ export const expressAdapter = (limiter: Limiter, config: ExpressRateLimiterOptio
         raw: req
       };
       
-      const result = await handleRateLimit(ctx, { limiter, ...config });
+      const result = await limiter.check(ctx);
 
       if (result.headers) {
         Object.entries(result.headers).forEach(([key, value]) => {
-          res.setHeader(key, value);
+          res.setHeader(key, value as string);
         });
       }
 
@@ -37,11 +36,15 @@ export const expressAdapter = (limiter: Limiter, config: ExpressRateLimiterOptio
 
       next();
     } catch (error) {
-      next(error);
+      if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
+         next();
+      } else {
+         next(error);
+      }
     }
   };
 };
 
-// Backward compatibility
 export const rateLimiter = expressAdapter;
 export const expressMiddleware = expressAdapter;
+export const expressRateLimit = expressAdapter;

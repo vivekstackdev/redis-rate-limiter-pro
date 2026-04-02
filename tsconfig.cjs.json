@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "outDir": "dist/cjs",
     "declaration": true,
-    "declarationMap": true,
+    "declarationMap": false,
     "stripInternal": true,
     "removeComments": true
   }

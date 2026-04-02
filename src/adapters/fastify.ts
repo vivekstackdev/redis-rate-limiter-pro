@@ -1,41 +1,49 @@
 // Fastify adapter
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyRequest, FastifyReply } from 'fastify';
 import { Limiter } from '../core/limiter.js';
-import { handleRateLimit } from '../core/handle.js';
+import { createRateLimiter, isLimiterInstance } from '../factory/createLimiter.js';
 import type { RateLimiterConfig, RateLimitContext } from '../types/index.js';
 
-export interface FastifyRateLimiterOptions extends Omit<RateLimiterConfig, 'limiter'> {
-  redis?: any;
-}
+export const fastifyAdapter = (input: RateLimiterConfig | Limiter) => {
+  if (!input) throw new Error("Rate limiter config required");
+  const limiter = isLimiterInstance(input) ? input : createRateLimiter(input);
 
-export const fastifyAdapter = (limiter: Limiter, config: FastifyRateLimiterOptions = {}) => {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const ctx: RateLimitContext = {
         ip: request.ip,
         method: request.method,
-        path: request.url.split('?')[0],
-        headers: request.headers as any,
-        query: request.query as any,
+        path: request.url,
+        headers: request.headers,
+        query: request.query,
         body: request.body,
         user: (request as any).user,
-        route: request.routeOptions?.url || request.url.split('?')[0] || 'unknown',
-        raw: request
+        route: request.routeOptions?.url || (request as any).routerPath || 'unknown',
+        raw: { request, reply }
       };
-      
-      const result = await handleRateLimit(ctx, { limiter, ...config });
+
+      const result = await limiter.check(ctx);
 
       if (result.headers) {
         Object.entries(result.headers).forEach(([key, value]) => {
-          reply.header(key, value);
+          reply.header(key, String(value));
         });
       }
 
       if (result.blocked && result.response) {
-        return reply.status(result.response.status || 429).send(result.response.body);
+        reply.code(result.response.status || 429).send(result.response.body);
+        return reply;
       }
+
     } catch (error) {
-      console.error('[FastifyRateLimiter Error]', error);
+      if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
+         // Fail open, do nothing
+      } else {
+         throw error;
+      }
     }
   };
 };
+
+export const fastifyRateLimit = fastifyAdapter;
+export const fastifyPlugin = fastifyAdapter;

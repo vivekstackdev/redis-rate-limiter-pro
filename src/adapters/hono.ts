@@ -1,15 +1,14 @@
 // Hono adapter
 import { Context } from 'hono';
 import { Limiter } from '../core/limiter.js';
-import { handleRateLimit } from '../core/handle.js';
+import { createRateLimiter, isLimiterInstance } from '../factory/createLimiter.js';
 import type { RateLimiterConfig, RateLimitContext } from '../types/index.js';
 
-export interface HonoAdapterConfig extends Omit<RateLimiterConfig, 'limiter'> {
-  redis?: any;
-}
+export const honoAdapter = (input: RateLimiterConfig | Limiter) => {
+  if (!input) throw new Error("Rate limiter config required");
+  const limiter = isLimiterInstance(input) ? input : createRateLimiter(input);
 
-export const honoAdapter = (limiter: Limiter, config: HonoAdapterConfig = {}) => {
-  return async (c: Context): Promise<Response | null> => {
+  return async (c: Context, next: () => Promise<void>): Promise<Response | void> => {
     try {
       const headers: Record<string, string> = {};
       c.req.raw.headers.forEach((value: string, key: string) => {
@@ -28,11 +27,11 @@ export const honoAdapter = (limiter: Limiter, config: HonoAdapterConfig = {}) =>
         raw: c,
       };
 
-      const result = await handleRateLimit(ctx, { limiter, ...config });
+      const result = await limiter.check(ctx);
 
       if (result.headers) {
         Object.entries(result.headers).forEach(([key, value]) => {
-          c.header(key, value);
+          c.header(key, String(value));
         });
       }
 
@@ -40,13 +39,16 @@ export const honoAdapter = (limiter: Limiter, config: HonoAdapterConfig = {}) =>
         return c.json(result.response.body, { status: result.response.status as any || 429 });
       }
 
-      return null;
+      await next();
     } catch (error) {
-      console.error('[HonoRateLimiter Error]', error);
-      throw error;
+      if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
+         await next();
+      } else {
+         throw error;
+      }
     }
   };
 };
 
-// Alias
+export const honoRateLimit = honoAdapter;
 export const honoHandler = honoAdapter;

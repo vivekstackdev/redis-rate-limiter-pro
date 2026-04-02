@@ -18,7 +18,7 @@
     "build": "npm run build:clean && npm run build:tsc && npm run build:bundle",
     "build:clean": "rimraf dist",
     "build:tsc": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json",
-    "build:bundle": "shx mkdir -p dist/lua && shx cp src/lua/*.lua dist/lua/",
+    "build:bundle": "shx mkdir -p dist/esm/store/lua dist/cjs/store/lua && shx cp src/store/lua/*.lua dist/esm/store/lua/ && shx cp src/store/lua/*.lua dist/cjs/store/lua/",
     "dev": "ts-node src/index.ts",
     "test": "jest --passWithNoTests",
     "lint": "eslint src/**/*.ts",
@@ -41,7 +41,16 @@
     "throttling",
     "ddos protection",
     "edge rate limiter",
-    "edge middleware"
+    "edge middleware",
+    "rate limiter nodejs",
+    "api rate limiter",
+    "redis middleware",
+    "nodejs middleware",
+    "backend rate limiter",
+    "rate limiting redis",
+    "rate limiter express middleware",
+    "distributed systems",
+    "backend performance"
   ],
   "author": "vivekstackdev",
   "license": "MIT",
@@ -57,8 +66,7 @@
     ".": {
       "types": "./dist/esm/index.d.ts",
       "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
-      "default": "./dist/esm/index.js"
+      "require": "./dist/cjs/index.js"
     },
     "./express": {
       "types": "./dist/esm/adapters/express.d.ts",
@@ -70,35 +78,40 @@
       "import": "./dist/esm/adapters/fastify.js",
       "require": "./dist/cjs/adapters/fastify.js"
     },
-    "./fetch": {
-      "types": "./dist/esm/adapters/fetch.d.ts",
-      "import": "./dist/esm/adapters/fetch.js",
-      "require": "./dist/cjs/adapters/fetch.js"
+    "./koa": {
+      "types": "./dist/esm/adapters/koa.d.ts",
+      "import": "./dist/esm/adapters/koa.js",
+      "require": "./dist/cjs/adapters/koa.js"
     },
     "./hono": {
       "types": "./dist/esm/adapters/hono.d.ts",
       "import": "./dist/esm/adapters/hono.js",
       "require": "./dist/cjs/adapters/hono.js"
     },
-    "./koa": {
-      "types": "./dist/esm/adapters/koa.d.ts",
-      "import": "./dist/esm/adapters/koa.js",
-      "require": "./dist/cjs/adapters/koa.js"
+    "./fetch": {
+      "types": "./dist/esm/adapters/fetch.d.ts",
+      "import": "./dist/esm/adapters/fetch.js",
+      "require": "./dist/cjs/adapters/fetch.js"
     },
     "./nest": {
       "types": "./dist/esm/adapters/nest/index.d.ts",
       "import": "./dist/esm/adapters/nest/index.js",
       "require": "./dist/cjs/adapters/nest/index.js"
     },
-    "./adapters": {
-      "types": "./dist/esm/adapters/index.d.ts",
-      "import": "./dist/esm/adapters/index.js",
-      "require": "./dist/cjs/adapters/index.js"
+    "./store": {
+      "types": "./dist/esm/store/index.d.ts",
+      "import": "./dist/esm/store/index.js",
+      "require": "./dist/cjs/store/index.js"
     },
-    "./core": {
-      "types": "./dist/esm/core/index.d.ts",
-      "import": "./dist/esm/core/index.js",
-      "require": "./dist/cjs/core/index.js"
+    "./factory": {
+      "types": "./dist/esm/factory/createLimiter.d.ts",
+      "import": "./dist/esm/factory/createLimiter.js",
+      "require": "./dist/cjs/factory/createLimiter.js"
+    },
+    "./types": {
+      "types": "./dist/esm/types/index.d.ts",
+      "import": "./dist/esm/types/index.js",
+      "require": "./dist/cjs/types/index.js"
     }
   },
   "peerDependencies": {
@@ -148,7 +161,7 @@
     "typescript": "5.5.4"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
   "publishConfig": {
     "access": "public"
@@ -163,5 +176,6 @@
         "dist/*"
       ]
     }
-  }
+  },
+  "packageManager": "npm@10.8.2"
 }

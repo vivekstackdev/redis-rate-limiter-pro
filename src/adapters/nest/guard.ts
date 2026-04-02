@@ -1,27 +1,21 @@
 /**
  * NestJS Guard for Rate Limiting
- * 
- * Professional NestJS integration using the framework-agnostic core engine
  */
-
 import { Injectable, CanActivate, ExecutionContext, Inject } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { Limiter } from '../../core/limiter.js';
-import { handleRateLimit } from '../../core/handle.js';
-import type { AdapterConfig } from '../../core/handle.js';
-import type { RateLimitContext } from '../../types/index.js';
+import { createRateLimiter, isLimiterInstance } from '../../factory/createLimiter.js';
+import type { RateLimiterConfig, RateLimitContext } from '../../types/index.js';
 
-export interface NestJSGuardConfig {
-  limiter: Limiter;
-  config?: Omit<AdapterConfig, 'limiter'>;
-}
+export type NestJSGuardConfig = RateLimiterConfig | Limiter;
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  private readonly config: NestJSGuardConfig;
+  private readonly limiter: Limiter;
 
   constructor(@Inject('RATE_LIMIT_CONFIG') config: NestJSGuardConfig) {
-    this.config = config;
+    if (!config) throw new Error("Rate limiter config required");
+    this.limiter = isLimiterInstance(config) ? config : createRateLimiter(config);
   }
 
   canActivate(
@@ -35,7 +29,7 @@ export class RateLimitGuard implements CanActivate {
     const request = ctx.getRequest();
     const response = ctx.getResponse();
 
-    // Normalize to unified RateLimitContext
+    // Normalize
     const headers: Record<string, string> = {};
     Object.entries(request.headers).forEach(([key, value]) => {
       if (value !== undefined) {
@@ -44,7 +38,7 @@ export class RateLimitGuard implements CanActivate {
     });
 
     const rateLimitCtx: RateLimitContext = {
-      ip: this.extractIP(request, headers),
+      ip: this.extractIP(request, headers) || 'anonymous',
       method: request.method,
       path: request.url,
       headers,
@@ -52,48 +46,37 @@ export class RateLimitGuard implements CanActivate {
       body: request.body,
       user: request.user,
       raw: { request, response },
-      framework: 'nestjs',
-    } as RateLimitContext;
+    };
 
     try {
-      const result = await handleRateLimit(rateLimitCtx, {
-        limiter: this.config.limiter,
-        ...this.config.config,
-      });
+      const result = await this.limiter.check(rateLimitCtx);
 
-      // Apply headers if present
       if (result.headers) {
         Object.entries(result.headers).forEach(([key, value]) => {
           response.setHeader(key, String(value));
         });
       }
 
-      // If blocked, throw exception (NestJS will handle response)
       if (result.blocked && result.response) {
-        response.status(result.response.status || 429);
-        response.json(result.response.body);
+        response.status(result.response.status || 429).json(result.response.body);
         return false;
       }
 
       return true;
     } catch (error) {
-      // Fail open by default (let request continue)
-      if (!this.config.config?.failOpen) {
-        throw error;
+      if (!this.limiter.config.failStrategy || this.limiter.config.failStrategy === 'fail-open') {
+         return true;
       }
-      return true;
+      throw error;
     }
   }
 
   private extractIP(req: any, headers: Record<string, string>): string | undefined {
-    // Check X-Forwarded-For first (for proxied requests)
     const forwarded = headers['x-forwarded-for'];
     if (forwarded) {
       const ips = forwarded.split(',').map(ip => ip.trim());
       return ips[0];
     }
-
-    // Fall back to direct IP
     return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress;
   }
 }

@@ -1,13 +1,12 @@
 // Fetch API adapter - works with Bun, Deno, Cloudflare Workers, Next.js Edge
 import { Limiter } from '../core/limiter.js';
-import { handleRateLimit } from '../core/handle.js';
+import { createRateLimiter, isLimiterInstance } from '../factory/createLimiter.js';
 import type { RateLimiterConfig, RateLimitContext } from '../types/index.js';
 
-export interface FetchRateLimiterOptions extends Omit<RateLimiterConfig, 'limiter'> {
-  redis?: any;
-}
+export const fetchRateLimiter = (input: RateLimiterConfig | Limiter) => {
+  if (!input) throw new Error("Rate limiter config required");
+  const limiter = isLimiterInstance(input) ? input : createRateLimiter(input);
 
-export const fetchRateLimiter = (limiter: Limiter, config: FetchRateLimiterOptions = {}) => {
   return async (request: Request): Promise<Response | null> => {
     try {
       const url = new URL(request.url);
@@ -26,7 +25,7 @@ export const fetchRateLimiter = (limiter: Limiter, config: FetchRateLimiterOptio
         raw: request,
       };
 
-      const result = await handleRateLimit(ctx, { limiter, ...config });
+      const result = await limiter.check(ctx);
 
       const responseInit: ResponseInit = {};
       if (result.headers) {
@@ -40,13 +39,14 @@ export const fetchRateLimiter = (limiter: Limiter, config: FetchRateLimiterOptio
         });
       }
 
-      return null;
+      return null; // OK
     } catch (error) {
-      console.error('[FetchRateLimiter Error]', error);
+      if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
+         return null;
+      }
       throw error;
     }
   };
 };
 
-// Alias for Hono
-export const honoRateLimiter = fetchRateLimiter;
+export const fetchRateLimit = fetchRateLimiter;

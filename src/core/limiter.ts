@@ -1,101 +1,71 @@
-import { Redis } from 'ioredis';
-import type { RateLimitResult, AlgorithmType, MultiLayerRateLimitResult } from '../types/index.js';
-import { slidingWindow, preloadScript as preloadSliding } from '../algorithms/slidingWindow.js';
-import { tokenBucket, preloadScript as preloadToken } from '../algorithms/tokenBucket.js';
+import type { RateLimitContext, RateLimiterConfig } from '../types/index.js';
+import { Engine } from './engine.js';
+import { compilePolicies } from '../policies/compiler.js';
 import { MemoryStore } from '../store/memoryStore.js';
+import type { Store } from '../store/types.js';
 
 export class Limiter {
-  private redis: Redis | null;
-  private memory: MemoryStore;
-  private initialized: boolean = false;
+  public store: Store;
+  public config: RateLimiterConfig;
+  private engine: Engine;
 
-  constructor(redis?: Redis) {
-    this.redis = redis || null;
-    this.memory = new MemoryStore();
-  }
-
-  // Preload Lua scripts for better performance
-  async initialize(): Promise<void> {
-    if (this.redis && !this.initialized) {
-      await Promise.all([preloadSliding(this.redis), preloadToken(this.redis)]);
-      this.initialized = true;
-    }
-  }
-
-  // Consume rate limit for a key
-  async consume(
-    key: string,
-    window: number,
-    max: number,
-    algorithm: AlgorithmType = 'sliding-window',
-    burst?: number
-  ): Promise<RateLimitResult> {
-    if (this.redis) {
-      if (algorithm === 'token-bucket') {
-        return tokenBucket(this.redis, key, window, max, burst);
-      }
-      return slidingWindow(this.redis, key, window, max);
-    }
-
-    return this.memory.consume(key, window, max);
-  }
-
-  // Consume multiple layers simultaneously
-  async consumeMany(layers: Array<{
-    key: string;
-    window: number;
-    max: number;
-    algorithm?: AlgorithmType;
-    burst?: number;
-  }>): Promise<MultiLayerRateLimitResult> {
-    const results = await Promise.all(
-      layers.map(layer => 
-        this.consume(layer.key, layer.window, layer.max, layer.algorithm || 'sliding-window', layer.burst)
-      )
-    );
+  constructor(config: RateLimiterConfig) {
+    this.config = config;
+    this.store = config.store || new MemoryStore();
     
-    return {
-      allowed: results.every(r => r.allowed),
-      remaining: Math.min(...results.map(r => r.remaining)),
-      reset: Math.max(...results.map(r => r.reset)),
-      layers: results
-    };
+    const compiledPolicies = compilePolicies(config.policies);
+
+    // Initialize engine
+    this.engine = new Engine(this.store, this.config, compiledPolicies);
   }
 
-  // Check rate limit without consuming
-  async peek(
-    key: string,
-    window: number,
-    max: number,
-    algorithm: AlgorithmType = 'sliding-window'
-  ): Promise<RateLimitResult> {
-    if (!this.redis && this.memory.peek) {
-      return this.memory.peek(key, window, max);
+  async check(ctx: RateLimitContext) {
+    if (this.config.skip && this.config.skip(ctx)) {
+      return { allowed: true };
     }
 
-    const result = await this.consume(key, window, max, algorithm);
-    
-    return {
-      ...result,
-      allowed: result.remaining > 0,
-      remaining: result.remaining,
-      totalHits: result.totalHits
-    };
-  }
-
-  // Reset rate limit for a key or all keys
-  async reset(key?: string): Promise<void> {
-    if (this.redis) {
-      if (key) {
-        await this.redis.del(key);
-      } else {
-        const keys = await this.redis.keys('rl:*');
-        if (keys.length > 0) {
-          await this.redis.del(...keys);
-        }
-      }
+    let resultObj;
+    if (this.config.layers && this.config.layers.length > 0) {
+      resultObj = await (this.engine as any).executeLayers?.(ctx, this.config.layers);
     } else {
-      this.memory.reset(key);
+      resultObj = await this.engine.check(ctx);
     }
+    
+    // Result is wrapped in check
+    const result = resultObj?.result || resultObj;
+
+    const headers: Record<string, string> = Object.create(null);
+
+    // Handle blocking and headers
+    if (resultObj?.key || result?.limit !== undefined) {
+      const limitVal = resultObj?.limit !== undefined ? Math.max(0, resultObj.limit) : this.config.default?.max;
+      if (limitVal !== undefined) headers['X-RateLimit-Limit'] = String(limitVal);
+
+      headers['X-RateLimit-Remaining'] = String(result.remaining);
+      headers['X-RateLimit-Reset'] = String(result.reset);
+      
+      if (!result.allowed) {
+        headers['Retry-After'] = String(result.reset - Math.floor(Date.now() / 1000));
+      }
+    }
+
+    let response = null;
+    if (!result.allowed) {
+      response = {
+        status: 429,
+        body: typeof this.config.message === 'function' ? this.config.message(ctx) : (this.config.message || {
+          error: 'Too Many Requests',
+          message: 'Rate limit exceeded, retry later.',
+          statusCode: 429
+        })
+      };
+    }
+
+    return {
+      allowed: result.allowed,
+      blocked: !result.allowed,
+      headers,
+      response
+    };
   }
 }

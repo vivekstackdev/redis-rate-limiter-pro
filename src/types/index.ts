@@ -20,6 +20,17 @@ export interface RateLimiterConfig {
   key?: (ctx: RateLimitContext) => string;
   skip?: (ctx: RateLimitContext) => boolean;
   prefix?: string;
+  algorithm?: AlgorithmType;
+  mode?: 'accurate' | 'fast';
+  failStrategy?: 'fail-open' | 'fail-closed' | 'fallback-to-memory';
+  store?: 'redis' | 'memory' | 'hybrid' | any; // Store interface handled via adapters or default memory
+  redis?: any; // Redis client instance
+  policies?: RateLimitRule[];
+  default?: RateLimitDefaultConfig | RateLimitRule;
+  hooks?: RateLimiterHooks;
+  plugins?: RateLimiterPlugin[];
+  layers?: any[];
+  message?: any | ((ctx: RateLimitContext) => any);
 }
 
 /**
@@ -57,10 +68,11 @@ export interface RateLimiterPlugin {
  * Default rate limit configuration
  */
 export interface RateLimitDefaultConfig {
-  window: number;
-  max: number;
-  algorithm?: 'sliding-window' | 'token-bucket';
+  window: number | ((ctx: RateLimitContext) => number);
+  max: number | ((ctx: RateLimitContext) => number);
+  algorithm?: AlgorithmType;
   burst?: number;
+  mode?: 'accurate' | 'fast';
 }
 
 /**
@@ -70,17 +82,36 @@ export interface RateLimitRule {
   path?: string | RegExp;
   prefix?: string;
   method?: string;
-  window: number | ((ctx: RateLimitContext) => number);
-  max: number | ((ctx: RateLimitContext) => number);
+  window?: number | ((ctx: RateLimitContext) => number);
+  max?: number | ((ctx: RateLimitContext) => number);
+  options?: {
+    window?: number | ((ctx: RateLimitContext) => number);
+    max?: number | ((ctx: RateLimitContext) => number);
+  };
   match?: (ctx: RateLimitContext) => boolean;
-  algorithm?: 'sliding-window' | 'token-bucket';
+  algorithm?: AlgorithmType;
   burst?: number;
+  mode?: 'accurate' | 'fast';
+  adaptive?: AdaptiveConfig;
+}
+
+/**
+ * Adaptive Rate Limiting Config
+ */
+export interface AdaptiveConfig {
+  enabled: boolean;
+  strategy?: 'auto-scale'; // more in future
+  rules?: {
+    spikeThreshold: number;   // detect sudden spike
+    reduceLimitBy: number;    // reduce limits during spike (percentage, e.g. 50 means 50%)
+    recoveryTime: number;     // recover after xs
+  };
 }
 
 /**
  * Algorithm type selector
  */
-export type AlgorithmType = 'sliding-window' | 'token-bucket';
+export type AlgorithmType = 'sliding-window' | 'token-bucket' | 'fixed-window';
 
 /**
  * Rate limit information passed to hooks
@@ -97,9 +128,9 @@ export interface RateLimitInfo {
  * Hooks for rate limiting lifecycle events
  */
 export interface RateLimiterHooks {
-  onRequestAllowed?: (req: any, info: RateLimitInfo) => void;
-  onLimitReached?: (req: any, info: RateLimitInfo) => void;
-  onError?: (error: unknown, req: any) => void;
+  onRequest?: (ctx: RateLimitContext) => void;
+  onLimit?: (ctx: RateLimitContext, info: RateLimitInfo) => void;
+  onError?: (error: unknown) => void;
 }
 
 /**

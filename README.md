@@ -1,118 +1,262 @@
 # 🚀 redis-rate-limiter-pro
 
-Production-grade distributed rate limiter for Node.js and Edge runtimes.
+[![npm](https://img.shields.io/npm/v/redis-rate-limiter-pro)](https://www.npmjs.com/package/redis-rate-limiter-pro)
+[![downloads](https://img.shields.io/npm/dm/redis-rate-limiter-pro)](https://www.npmjs.com/package/redis-rate-limiter-pro)
+[![license](https://img.shields.io/npm/l/redis-rate-limiter-pro)](https://www.npmjs.com/package/redis-rate-limiter-pro)
 
-⚡ Sliding window (accurate)
-🔥 Token bucket (burst handling)
-🌍 Works with Express, Fastify, Koa, Hono, Fetch, NestJS
-🧠 Redis-powered + memory fallback
+Production-ready **Redis rate limiter for Node.js, Express, Fastify, Koa, Hono, and Edge runtimes**.
+
+👉 Works out of the box with zero config — scales to Redis when needed.
 
 ---
 
-## 📦 Installation
+## 📈 Performance
+
+- **MemoryStore**: ~1.4M req/s
+- **RedisStore**: ~85k–90k req/s (local authenticated test)
+- **Concurrency**: 10,000 requests processed in ~130ms–350ms
+
+✔ **Atomic Operations**: Built-in Lua scripts ensure no race conditions.
+✔ **Accurate**: Sliding window accuracy even under high concurrency.
+✔ **Lightweight**: Zero-dependency core (optional `ioredis` for distributed mode).
+
+---
+
+## 🔁 Zero Downtime (Hybrid Mode)
+
+- **Fail-Open Resilience**: Redis failure → automatic fallback to local memory.
+- **No Request Failures**: Your API stays up even if your Redis goes down.
+- **Designed for Scale**: Perfect for mission-critical payment, auth, and SaaS APIs.
+
+---
+
+## 🔥 Why this over others?
+
+- Works with ALL frameworks (Express, Fastify, Koa, Hono, Fetch, NestJS)
+- Redis + Hybrid fallback (no downtime)
+- O(1) route matching (fast at scale)
+- Built-in Lua scripts (atomic, no race conditions)
+- Dynamic + multi-layer limits
+
+---
+
+## 📦 Install
 
 ```bash
-npm install redis-rate-limiter-pro ioredis
+npm install redis-rate-limiter-pro
 ```
+
+> ℹ️ Redis is optional. Install `ioredis` only if using Redis or Hybrid mode:
+>
+> ```bash
+> npm install ioredis
+> ```
 
 ---
 
-## ⚡ Quick Start
+## 🚀 Quick Start
 
-```ts
-import { Limiter } from 'redis-rate-limiter-pro'
-import { expressAdapter } from 'redis-rate-limiter-pro/express'
-import Redis from 'ioredis'
+```js
+import { expressRateLimit } from "redis-rate-limiter-pro/express";
 
-const redis = new Redis()
-const limiter = new Limiter(redis)
-
-app.use(expressAdapter(limiter, {
+app.use(expressRateLimit({
   default: { window: 60, max: 100 }
-}))
+}));
 ```
 
 ---
 
-## 🧠 Core Concept
+## 🌍 Framework Usage
 
-* Core → framework-agnostic engine
-* Adapters → framework bindings
-* Plugins → extensibility layer
-* Redis + Lua → atomic operations
+### Express
+```js
+import { expressRateLimit } from "redis-rate-limiter-pro/express";
+app.use(expressRateLimit(config));
+```
+
+### Fastify
+```js
+import { fastifyRateLimit } from "redis-rate-limiter-pro/fastify";
+fastify.addHook("onRequest", fastifyRateLimit(config));
+```
+
+### Koa
+```js
+import { koaRateLimit } from "redis-rate-limiter-pro/koa";
+app.use(koaRateLimit(config));
+```
 
 ---
 
-## ⚙️ Basic Configuration
+## 🏗 How it works
 
-```ts
-{
-  default: { window: 60, max: 100 },
-  key: (ctx) => ctx.ip,
-  headers: true
+**Request** → **Adapter** → **Limiter** → **Engine** → **Store** → **Redis/Memory**
+
+- **Adapter**: Framework integration (Express, Fastify, etc.)
+- **Engine**: Applies rules, policies, and business logic.
+- **Store**: Handles persistence (Redis, local Memory, or Hybrid).
+
+---
+
+## ⚙️ Defaults
+
+- **Store**: Memory (default)
+- **Algorithm**: Sliding Window
+- **Key**: Client IP address
+- **Prefix**: `rl:`
+
+---
+
+## 🧱 Full Configuration Example
+
+```js
+import { createRateLimiter } from "redis-rate-limiter-pro";
+import Redis from "ioredis";
+
+const limiter = createRateLimiter({
+  store: "hybrid",
+  redis: new Redis(),
+  prefix: "rl:",
+
+  default: {
+    window: 60,
+    max: 100,
+    algorithm: "sliding-window"
+  },
+
+  policies: [
+    { path: "/api/login", max: 5, window: 60 }
+  ],
+
+  layers: [
+    { key: "global", max: 10000, window: 60 }
+  ],
+
+  key: (ctx) => ctx.user?.id || ctx.ip,
+
+  skip: (ctx) => ctx.ip === "127.0.0.1",
+
+  failStrategy: "fallback-to-memory",
+
+  hooks: {
+    onRequest: (ctx) => console.log("Request starting"),
+    onLimit: (ctx, res) => console.warn("Rate limit reached"),
+    onError: (err) => console.error("Limiter error:", err)
+  }
+});
+```
+
+---
+
+## 🧩 Advanced Features
+
+- Multi-layer limits (global + user + route)
+- Hooks (onRequest, onLimit, onError)
+- Plugins (blacklist / whitelist)
+- Custom key generation
+
+---
+
+## ⚙️ Redis
+
+```js
+import { createRateLimiter } from "redis-rate-limiter-pro";
+import Redis from "ioredis";
+
+const limiter = createRateLimiter({
+  store: "redis",
+  redis: new Redis(),
+  default: { window: 60, max: 100 }
+});
+```
+
+---
+
+## 🔥 Hybrid Mode
+
+```js
+createRateLimiter({
+  store: "hybrid",
+  redis: new Redis(),
+  default: { window: 60, max: 100 }
+});
+```
+
+> Redis fails → fallback to memory
+
+---
+
+## 🎯 Policies
+
+```js
+policies: [
+  { path: "/login", max: 5, window: 60 },
+  { prefix: "/api", max: 200, window: 60 }
+]
+```
+
+---
+
+## 🧠 Dynamic Limits
+
+```js
+default: {
+  window: 60,
+  max: (ctx) => ctx.user?.plan === "pro" ? 1000 : 100
 }
 ```
 
 ---
 
-## 🔌 Adapters
+## 🌍 Frameworks
 
-```ts
-expressAdapter(...)
-fastifyAdapter(...)
-koaAdapter(...)
-honoAdapter(...)
-fetchAdapter(...)
+* Express
+* Fastify
+* Koa
+* Hono
+* Fetch
+* NestJS
+
+---
+
+## 📊 Headers
+
+```
+X-RateLimit-Limit
+X-RateLimit-Remaining
+X-RateLimit-Reset
+Retry-After
 ```
 
 ---
 
-## 🧠 Rules
+## 📚 Docs
 
-```ts
-rules: [
-  { path: '/login', window: 60, max: 5 },
-  { prefix: '/api', window: 60, max: 100 }
-]
+*   [🚀 Getting Started](https://github.com/vivekstackdev/redis-rate-limiter-pro/tree/main/docs/getting-started.md)
+*   [⚙️ Configuration](https://github.com/vivekstackdev/redis-rate-limiter-pro/tree/main/docs/configuration.md)
+*   [🚀 Production Guide](https://github.com/vivekstackdev/redis-rate-limiter-pro/tree/main/docs/production.md)
+
+---
+
+## 🧪 Testing & Benchmark
+
+```bash
+node tests/stress.ts
+node scripts/benchmark.ts
 ```
 
 ---
 
-## 🔌 Plugins
+## 🧠 Use Cases
 
-```ts
-plugins: [
-  whitelistPlugin(['127.0.0.1']),
-  blacklistPlugin(['1.2.3.4'])
-]
-```
-
----
-
-## ⚠️ Important
-
-This is **application-level rate limiting**.
-
-Use reverse proxies (NGINX, Traefik, etc.) for:
-
-* global traffic limiting
-* DDoS protection
+* Login / OTP protection
+* API rate limiting
+* Payment APIs
+* Chat apps
+* SaaS apps
 
 ---
 
-## 📚 Documentation
-
-- 📖 [Full Guide](https://github.com/vivekstackdev/redis-rate-limiter-pro/blob/main/docs/guide.md)
-- 🚀 [Advanced Usage](https://github.com/vivekstackdev/redis-rate-limiter-pro/blob/main/docs/advanced.md)
----
-
-## 📊 Performance
-
-* ~30k req/sec (local benchmark)
-* ~6ms p99 latency
-
----
-
-## 🏆 License
+## 🧾 License
 
 MIT
