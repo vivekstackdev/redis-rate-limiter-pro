@@ -10,15 +10,16 @@ export const fetchRateLimiter = (input: RateLimiterConfig | Limiter) => {
   return async (request: Request): Promise<Response | null> => {
     try {
       const url = new URL(request.url);
-      const headers: Record<string, string> = {};
-      request.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
+
+      // ⚡ Optimized: Zero-copy lazy lookup for headers
+      const headers = new Proxy({}, {
+        get: (_, prop) => typeof prop === 'string' ? request.headers.get(prop) : undefined
+      }) as any;
 
       const ctx: RateLimitContext = {
-        ip: request.headers.get('x-forwarded-for')?.split(',')[0] || 
-            request.headers.get('x-real-ip') || 
-            'anonymous',
+        ip: request.headers.get('x-forwarded-for')?.split(',')[0] ||
+          request.headers.get('x-real-ip') ||
+          'anonymous',
         method: request.method,
         path: url.pathname,
         headers,
@@ -27,9 +28,12 @@ export const fetchRateLimiter = (input: RateLimiterConfig | Limiter) => {
 
       const result = await limiter.check(ctx);
 
-      const responseInit: ResponseInit = {};
+      const responseInit: ResponseInit = { headers: {} };
       if (result.headers) {
-        responseInit.headers = result.headers;
+        const resHeaders = result.headers;
+        for (const key in resHeaders) {
+          (responseInit.headers as any)[key] = String((resHeaders as any)[key]);
+        }
       }
 
       if (result.blocked && result.response) {
@@ -42,7 +46,7 @@ export const fetchRateLimiter = (input: RateLimiterConfig | Limiter) => {
       return null; // OK
     } catch (error) {
       if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
-         return null;
+        return null;
       }
       throw error;
     }

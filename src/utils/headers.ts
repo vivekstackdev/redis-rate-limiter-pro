@@ -9,10 +9,10 @@ export function buildRateLimitHeaders(
     "X-RateLimit-Remaining": String(result.remaining),
     "X-RateLimit-Reset": String(result.reset),
   };
-  
+
   if (!result.allowed) {
     headers["Retry-After"] = String(result.reset - Math.floor(Date.now() / 1000));
   }
-  
+
   return headers;
 }

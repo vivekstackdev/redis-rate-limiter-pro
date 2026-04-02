@@ -24,9 +24,10 @@ export const koaAdapter = (input: RateLimiterConfig | Limiter) => {
       const result = await limiter.check(rateLimitCtx);
 
       if (result.headers) {
-        Object.entries(result.headers).forEach(([key, value]) => {
-          ctx.set(key, String(value));
-        });
+        const headers = result.headers;
+        for (const key in headers) {
+          ctx.set(key, String((headers as any)[key]));
+        }
       }
 
       if (result.blocked && result.response) {
@@ -38,9 +39,9 @@ export const koaAdapter = (input: RateLimiterConfig | Limiter) => {
       await next();
     } catch (error) {
       if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
-         await next();
+        await next();
       } else {
-         throw error;
+        throw error;
       }
     }
   };

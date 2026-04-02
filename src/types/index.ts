@@ -41,6 +41,8 @@ export interface RateLimiterConfig {
 export interface RateLimitResult {
   /** Whether the request is allowed */
   allowed: boolean;
+  /** The maximum number of requests allowed in this window */
+  limit: number;
   /** Number of requests remaining in current window */
   remaining: number;
   /** Unix timestamp (seconds) when the rate limit resets */
@@ -138,6 +140,7 @@ export interface RateLimiterHooks {
  */
 export interface MultiLayerRateLimitResult {
   allowed: boolean;
+  limit?: number;
   remaining?: number;
   reset?: number;
   layers?: RateLimitResult[];

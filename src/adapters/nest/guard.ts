@@ -65,7 +65,7 @@ export class RateLimitGuard implements CanActivate {
       return true;
     } catch (error) {
       if (!this.limiter.config.failStrategy || this.limiter.config.failStrategy === 'fail-open') {
-         return true;
+        return true;
       }
       throw error;
     }

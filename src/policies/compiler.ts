@@ -40,7 +40,7 @@ export function resolvePolicy(
   compiledPolicies: CompiledPolicies,
   defaultRule: RateLimitDefaultConfig
 ): RateLimitRule {
-  const path = ctx.route || ctx.path.replace(/\\d+/g, ':id');
+  const path = ctx.route || ctx.path.replace(/\d+/g, ':id');
   const method = ctx.method.toUpperCase();
 
   // 1. Try exact match
@@ -63,7 +63,7 @@ export function resolvePolicy(
     if (rule.match && rule.match(ctx)) {
       return rule;
     }
-    
+
     if (rule.path instanceof RegExp && rule.path.test(path)) {
       return rule;
     }

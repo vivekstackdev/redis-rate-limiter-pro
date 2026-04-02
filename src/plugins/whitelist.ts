@@ -24,21 +24,21 @@ export const whitelistPlugin = (ips: string[]): RateLimiterPlugin => {
   if (!Array.isArray(ips)) {
     throw new Error('IPs must be an array');
   }
-  
+
   const validIps = ips.filter(ip => ip && typeof ip === 'string');
-  
+
   if (validIps.length !== ips.length) {
     throw new Error('Invalid IP address detected in whitelist (empty or non-string values are not allowed)');
   }
-  
+
   return {
     name: 'whitelist',
-  
+
     beforeRequest: (ctx: RateLimitContext) => {
       const ip = getClientIP(ctx);
       // Safely check IP - skip if IP is not available
       if (ip === 'anonymous') return;
-      
+
       // Check IP or custom identifier in header
       if (validIps.includes(ip) || validIps.includes(ctx.headers?.['x-user'] as string)) {
         // Set flag to skip rate limiting

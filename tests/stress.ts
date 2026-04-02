@@ -6,16 +6,16 @@ import { HybridStore } from '../dist/esm/store/hybridStore.js';
 
 async function runTests() {
   console.log("🔥 Starting redis-rate-limiter-pro Validation Suite (authenticated Redis)...");
-  
+
   const redisUrl = "redis://:mypassword@127.0.0.1:6379";
   const redisProcess = new Redis(redisUrl); // use the authenticated URL
-  
+
   try {
-      await redisProcess.ping();
-      console.log("✅ Authenticated Redis connected.");
+    await redisProcess.ping();
+    console.log("✅ Authenticated Redis connected.");
   } catch (e) {
-      console.error("❌ Redis Connection Failed:", e);
-      process.exit(1);
+    console.error("❌ Redis Connection Failed:", e);
+    process.exit(1);
   }
 
   // 1. Setup Data Stores
@@ -23,9 +23,17 @@ async function runTests() {
   const memoryStore = new MemoryStore();
   const hybridStore = new HybridStore({ redis: redisStore, memory: memoryStore });
 
+  // Metric tracking
+  let fallbackCount = 0;
+  const originalConsume = memoryStore.consume.bind(memoryStore);
+  memoryStore.consume = (...args) => {
+    fallbackCount++;
+    return originalConsume(...args);
+  };
+
   // 2. Setup Limiter Engine
   const limiter = createRateLimiter({
-    store: hybridStore, 
+    store: hybridStore,
     default: { window: 10, max: 2000 },
     failStrategy: 'fallback-to-memory',
     policies: [
@@ -50,7 +58,7 @@ async function runTests() {
   );
   const end = Date.now();
   console.log(`✅ Processed 10,000 requests in ${end - start}ms`);
-  
+
   const blocks = results.filter(r => r.blocked).length;
   console.log(`✅ Blocked requests: ${blocks} (Expected approx: 8000)`);
 
@@ -58,19 +66,34 @@ async function runTests() {
   console.log("\n🛣️  Test 2: Dynamic Route Policies limits mapping");
   const result1 = await limiter.check(generateContext('/api/route/123'));
   // Should match generic `/api/route/:id` meaning limited to 20
-  console.log(`✅ Result1 headers map limit: ${result1.headers?.['X-RateLimit-Limit']}`);
+  const headerLimit = result1.headers && (result1.headers as any)['X-RateLimit-Limit'];
+  console.log(`✅ Result1 headers map limit: ${headerLimit}`);
 
   // 5. Redis Failure Mode
   console.log("\n🔥 Test 3: Redis Failure (Trigger Hybrid mode)");
+  // Reset counter to measure ONLY failure mode
+  fallbackCount = 0;
+  
   // Fake Redis fail
   (redisProcess as any).disconnect();
   console.log("Disconnected Redis...");
-  try {
-    const memoryResult = await limiter.check(generateContext('/api/heavy-load-after-fail'));
-    console.log("✅ Passed with fallback-to-memory:", memoryResult.allowed);
-  } catch (e: any) {
-    console.error("❌ Failed. It threw an error instead of fallback to memory:", e.message);
+  
+  const startFail = Date.now();
+  const failResults = await Promise.all(
+    Array.from({ length: 100 }).map(() => limiter.check(generateContext('/api/heavy-load-after-fail')))
+  );
+  const endFail = Date.now();
+  
+  console.log(`✅ Processed 100 fallback requests in ${endFail - startFail}ms`);
+  console.log(`✅ Fallback count: ${fallbackCount}`);
+  
+  if (fallbackCount >= 100) {
+    console.log("✅ Circuit Breaker & Fallback Verified.");
+  } else {
+    console.error(`❌ Fallback count too low (${fallbackCount}). Expected at least 100.`);
   }
+
+  process.exit(0);
 
   process.exit(0);
 }

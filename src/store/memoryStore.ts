@@ -1,4 +1,5 @@
 import type { RateLimitResult, AlgorithmType } from '../types/index.js';
+import { CLEANUP_INTERVAL_MS, PRUNING_BATCH_SIZE, DEFAULT_MAX_STORE_ENTRIES } from '../core/constants.js';
 
 export interface Store {
   consume(
@@ -15,44 +16,54 @@ type Entry = {
   reset: number;
 };
 
+/**
+ * In-memory store for rate limiting.
+ * Uses a static shared store and a singleton timer to handle periodic cleanup 
+ * across all instances with minimum overhead and no memory leaks.
+ */
 export class MemoryStore {
-  private store = new Map<string, Entry>();
-  private maxEntries = 50_000; // Prevent memory leak
-  private cleanupInterval: NodeJS.Timeout | null = null;
-  private static instanceCount = 0; // Track instances
+  // 🔹 Static shared state to avoid instance-reference leaks
+  private static readonly store = new Map<string, Entry>();
+  private static activeStoresCount = 0;
+  private static cleanupInterval: NodeJS.Timeout | null = null;
+  
+  private maxEntries: number;
+  private destroyed = false;
 
   constructor(options?: { maxEntries?: number }) {
-    this.maxEntries = options?.maxEntries ?? 50_000;
-    
-    // Only create cleanup interval if this is the first instance
-    // This prevents multiple intervals leaking
-    if (MemoryStore.instanceCount === 0) {
-      this.cleanupInterval = setInterval(() => {
-        this.cleanup();
-      }, 60000);
-      
-      // Allow cleanup in Node.js
-      if (typeof this.cleanupInterval.unref === 'function') {
-        this.cleanupInterval.unref();
+    this.maxEntries = options?.maxEntries ?? DEFAULT_MAX_STORE_ENTRIES;
+
+    // Register instance for global cleanup
+    MemoryStore.activeStoresCount++;
+
+    // Initialize singleton timer if not already running
+    if (!MemoryStore.cleanupInterval) {
+      MemoryStore.cleanupInterval = setInterval(() => {
+        MemoryStore.pruneExpiredEntries();
+      }, CLEANUP_INTERVAL_MS);
+
+      // Allow Node.js to exit even if this timer is active
+      if (typeof (MemoryStore.cleanupInterval as any).unref === 'function') {
+        (MemoryStore.cleanupInterval as any).unref();
       }
     }
-    
-    MemoryStore.instanceCount++;
   }
 
   /**
-   * Clean up expired entries (batch processing for performance)
+   * Static periodic pruning of expired entries to prevent memory leaks 
+   * without holding onto instance references.
    */
-  private cleanup(): void {
+  private static pruneExpiredEntries(): void {
     const now = Date.now();
-    let deleted = 0;
-    const targetDelete = Math.min(this.store.size, 1000); // Batch cleanup
+    let prunedCount = 0;
     
-    for (const [key, entry] of this.store.entries()) {
+    // We only prune a subset to keep latency low
+    for (const [key, entry] of MemoryStore.store.entries()) {
       if (entry.reset < now) {
-        this.store.delete(key);
-        deleted++;
-        if (deleted >= targetDelete) break;
+        MemoryStore.store.delete(key);
+        prunedCount++;
+        
+        if (prunedCount >= PRUNING_BATCH_SIZE) break;
       }
     }
   }
@@ -61,45 +72,54 @@ export class MemoryStore {
    * Enforce max entries with FIFO eviction (oldest first)
    */
   private enforceMaxEntries(): void {
-    if (this.store.size <= this.maxEntries) return;
-    
-    const toDelete = this.store.size - this.maxEntries;
+    if (MemoryStore.store.size <= this.maxEntries) return;
+
+    const toDelete = MemoryStore.store.size - this.maxEntries;
     let deleted = 0;
-    
+
     // Delete oldest entries (first inserted = FIFO)
-    for (const key of this.store.keys()) {
-      this.store.delete(key);
+    for (const key of MemoryStore.store.keys()) {
+      MemoryStore.store.delete(key);
       deleted++;
       if (deleted >= toDelete) break;
     }
   }
 
   /**
-   * Destroy the store and cleanup resources
-   * Call this when shutting down to prevent interval leaks
+   * Destroy the store and deregister from global cleanup.
+   * Includes the mandatory safety guard to prevent redundant counter decrements.
    */
-  destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
+  public destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+
+    // 🔹 Deregister from global pruning
+    MemoryStore.activeStoresCount--;
+
+    // If no more active stores, stop the singleton timer
+    if (MemoryStore.activeStoresCount === 0 && MemoryStore.cleanupInterval) {
+      clearInterval(MemoryStore.cleanupInterval);
+      MemoryStore.cleanupInterval = null;
     }
-    MemoryStore.instanceCount--;
-    this.store.clear();
+
+    // Note: We don't clear the shared static store here as other instances
+    // might still be relying on it. Independent stores use the consume/reset API.
   }
 
-  consume(key: string, window: number, max: number): RateLimitResult {
+  public consume(key: string, window: number, max: number): RateLimitResult {
     const now = Date.now();
-    const entry = this.store.get(key);
+    const entry = MemoryStore.store.get(key);
 
     if (!entry || entry.reset < now) {
       const reset = now + window * 1000;
-      this.store.set(key, { count: 1, reset });
-      
+      MemoryStore.store.set(key, { count: 1, reset });
+
       // Enforce max entries to prevent memory leak
       this.enforceMaxEntries();
-      
+
       return {
         allowed: true,
+        limit: max,
         remaining: max - 1,
         reset: Math.ceil(reset / 1000),
         totalHits: 1,
@@ -111,6 +131,7 @@ export class MemoryStore {
 
     return {
       allowed,
+      limit: max,
       remaining: Math.max(0, max - entry.count),
       reset: Math.ceil(entry.reset / 1000),
       totalHits: entry.count,
@@ -126,12 +147,13 @@ export class MemoryStore {
    */
   peek(key: string, window: number, max: number): RateLimitResult {
     const now = Date.now();
-    const entry = this.store.get(key);
+    const entry = MemoryStore.store.get(key);
 
     if (!entry || entry.reset < now) {
       // No active limit - fresh state
       return {
         allowed: true,
+        limit: max,
         remaining: max,
         reset: Math.ceil((now + window * 1000) / 1000),
         totalHits: 0,
@@ -142,6 +164,7 @@ export class MemoryStore {
 
     return {
       allowed,
+      limit: max,
       remaining: Math.max(0, max - entry.count),
       reset: Math.ceil(entry.reset / 1000),
       totalHits: entry.count,
@@ -154,19 +177,19 @@ export class MemoryStore {
    */
   reset(key?: string): void {
     if (key) {
-      this.store.delete(key);
+      MemoryStore.store.delete(key);
     } else {
-      this.store.clear();
+      MemoryStore.store.clear();
     }
   }
 
   getStats() {
     return {
-      totalKeys: this.store.size,
+      totalKeys: MemoryStore.store.size,
     };
   }
 
   clear() {
-    this.store.clear();
+    MemoryStore.store.clear();
   }
 }

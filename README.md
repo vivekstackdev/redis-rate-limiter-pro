@@ -13,7 +13,7 @@ Production-ready **Redis rate limiter for Node.js, Express, Fastify, Koa, Hono, 
 ## 📈 Performance
 
 - **MemoryStore**: ~1.4M req/s
-- **RedisStore**: ~85k–90k req/s (local authenticated test)
+- **RedisStore**: ~80k–95k req/s (environment dependent)
 - **Concurrency**: 10,000 requests processed in ~130ms–350ms
 
 ✔ **Atomic Operations**: Built-in Lua scripts ensure no race conditions.

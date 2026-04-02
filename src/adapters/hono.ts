@@ -10,10 +10,10 @@ export const honoAdapter = (input: RateLimiterConfig | Limiter) => {
 
   return async (c: Context, next: () => Promise<void>): Promise<Response | void> => {
     try {
-      const headers: Record<string, string> = {};
-      c.req.raw.headers.forEach((value: string, key: string) => {
-        headers[key] = value;
-      });
+      // ⚡ Optimized: Zero-copy lazy lookup for headers
+      const headers = new Proxy({}, {
+        get: (_, prop) => typeof prop === 'string' ? c.req.header(prop) : undefined
+      }) as any;
 
       const ctx: RateLimitContext = {
         ip: c.req.header('x-forwarded-for')?.split(',')[0] || c.req.header('x-real-ip') || 'anonymous',
@@ -42,9 +42,9 @@ export const honoAdapter = (input: RateLimiterConfig | Limiter) => {
       await next();
     } catch (error) {
       if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
-         await next();
+        await next();
       } else {
-         throw error;
+        throw error;
       }
     }
   };

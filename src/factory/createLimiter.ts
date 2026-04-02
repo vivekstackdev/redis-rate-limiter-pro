@@ -12,11 +12,11 @@ export function createRateLimiter(config: RateLimiterConfig): Limiter {
 
   let store;
 
-  // 🔹 Allow custom store injection
+  //  Allow custom store injection
   if (typeof config.store === "object" && config.store?.consume) {
     store = config.store;
   }
-  // 🔹 Built-in store types
+  //  Built-in store types
   else if (config.store === "redis") {
     if (!config.redis) {
       throw new Error("Redis store requires 'redis' client");
@@ -30,10 +30,10 @@ export function createRateLimiter(config: RateLimiterConfig): Limiter {
     store = new HybridStore({
       redis: new RedisStore(config.redis, { timeoutMs: 1000 }),
       memory: new MemoryStore(),
-      failStrategy: config.failStrategy || "fail-open"
+      failStrategy: config.failStrategy || "fallback-to-memory"
     });
   }
-  // 🔹 Default = memory
+  //  Default = memory
   else {
     store = new MemoryStore();
   }
@@ -43,7 +43,7 @@ export function createRateLimiter(config: RateLimiterConfig): Limiter {
   return new Limiter(config);
 }
 
-// 🔹 Helper: isLimiterInstance
+//  Helper: isLimiterInstance
 export function isLimiterInstance(obj: any): obj is Limiter {
   return obj && typeof obj.check === "function";
 }

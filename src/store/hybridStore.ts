@@ -16,7 +16,7 @@ export class HybridStore implements Store {
 
   constructor(options: HybridStoreOptions) {
     this.redisStore = options.redis;
-    this.memoryStore = options.memory;
+    this.memoryStore = options.memory || new MemoryStore(); // 🛡️ Safety guard: MUST exist always
     this.failStrategy = options.failStrategy ?? 'fallback-to-memory';
   }
 
@@ -37,6 +37,7 @@ export class HybridStore implements Store {
       if (this.failStrategy === 'fail-open') {
         return {
           allowed: true,
+          limit: max,
           remaining: max,
           reset: Math.ceil((Date.now() + window * 1000) / 1000),
           totalHits: 0
@@ -61,6 +62,7 @@ export class HybridStore implements Store {
       if (this.failStrategy === 'fail-open') {
         return {
           allowed: true,
+          limit: max,
           remaining: max,
           reset: Math.ceil((Date.now() + window * 1000) / 1000),
           totalHits: 0

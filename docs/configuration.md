@@ -15,7 +15,7 @@ Full documentation of all available options in **redis-rate-limiter-pro**.
 | `redis` | `Redis \| RedisProxy` | An instance of ioredis to use with RedisStore. |
 | `key` | `(ctx) => string` | A function to generate custom client identifiers (e.g., user ID). |
 | `skip` | `(ctx) => boolean` | A function to skip rate limiting for specific requests. |
-| `failStrategy` | `"fail-open" \| "fallback-to-memory"` | Strategy to use if Redis becomes unreachable. |
+| `failStrategy` | `"fail-open" \| "fail-closed" \| "fallback-to-memory"` | Strategy to use if Redis becomes unreachable (default: `"fallback-to-memory"`). |
 | `hooks` | `RateLimitHooks` | Lifecycle hooks (`onRequest`, `onLimit`, `onError`). |
 | `plugins` | `RateLimitPlugin[]` | Modular plugins (e.g., `blacklist`, `whitelist`). |
 | `prefix` | `string` | Optional prefix for all Redis keys (default: `"rl:"`). |

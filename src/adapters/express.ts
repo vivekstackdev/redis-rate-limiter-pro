@@ -21,13 +21,14 @@ export const expressAdapter = (input: RateLimiterConfig | Limiter) => {
         route: req.route?.path || (req.baseUrl && req.path ? req.baseUrl + req.path : undefined) || 'unknown',
         raw: req
       };
-      
+
       const result = await limiter.check(ctx);
 
       if (result.headers) {
-        Object.entries(result.headers).forEach(([key, value]) => {
-          res.setHeader(key, value as string);
-        });
+        const headers = result.headers;
+        for (const key in headers) {
+          res.setHeader(key, (headers as any)[key]);
+        }
       }
 
       if (result.blocked && result.response) {
@@ -37,9 +38,9 @@ export const expressAdapter = (input: RateLimiterConfig | Limiter) => {
       next();
     } catch (error) {
       if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
-         next();
+        next();
       } else {
-         next(error);
+        next(error);
       }
     }
   };

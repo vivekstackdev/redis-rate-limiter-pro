@@ -25,8 +25,9 @@ In production, never let your rate-limiter take your API down.
 
 ## 🔥 Redis Usage Tips
 
-- **Timeouts**: The built-in `RedisStore` uses `Promise.race()` to timeout slow Redis response times (default: 100ms), ensuring high API latency remains low.
-- **Retry Logic**: Automatic single-retry for transient Redis connection issues.
+- **Redis Timeout**: The built-in `RedisStore` uses `Promise.race()` to timeout slow Redis response times (default: 1000ms), ensuring high API latency remains low.
+- **Retry Logic**: Single retry with exponential backoff + full jitter to prevent retry storms and thundering herd synchronization.
+- **Circuit Breaker**: Detects transient Redis brownouts and bypasses the network for 2 seconds to allow recovery.
 - **Security**: Use the `key` generator to rate limit by authenticated User ID rather than IP to prevent proxy-based abuse.
 
 ---

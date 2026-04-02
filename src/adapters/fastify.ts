@@ -25,9 +25,10 @@ export const fastifyAdapter = (input: RateLimiterConfig | Limiter) => {
       const result = await limiter.check(ctx);
 
       if (result.headers) {
-        Object.entries(result.headers).forEach(([key, value]) => {
-          reply.header(key, String(value));
-        });
+        const headers = result.headers;
+        for (const key in headers) {
+          reply.header(key, String((headers as any)[key]));
+        }
       }
 
       if (result.blocked && result.response) {
@@ -37,9 +38,9 @@ export const fastifyAdapter = (input: RateLimiterConfig | Limiter) => {
 
     } catch (error) {
       if (!limiter.config.failStrategy || limiter.config.failStrategy === 'fail-open') {
-         // Fail open, do nothing
+        // Fail open, do nothing
       } else {
-         throw error;
+        throw error;
       }
     }
   };
