@@ -1,6 +1,6 @@
 {
   "name": "redis-rate-limiter-pro",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Production-grade distributed rate limiting engine for Node.js and edge runtimes",
   "type": "module",
   "main": "./dist/cjs/index.js",
